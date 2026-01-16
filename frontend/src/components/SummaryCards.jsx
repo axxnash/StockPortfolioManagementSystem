@@ -10,22 +10,24 @@ export default function SummaryCards({ summary }) {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="text-xs font-medium text-slate-500">Total P&amp;L</div>
-        <div className={[
-          "mt-2 text-2xl font-semibold tracking-tight",
-          Number(summary?.totalPnL ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600",
-        ].join(" ")}>
-          RM{Number(summary?.totalPnL ?? 0).toFixed(2)}
+        <div className="text-xs font-medium text-slate-500">Total Cost</div>
+        <div className="mt-2 text-2xl font-semibold tracking-tight">
+          RM{Number(summary?.totalCost ?? 0).toFixed(2)}
         </div>
-        <div className="mt-1 text-xs text-slate-400">Profit / loss overall</div>
+        <div className="mt-1 text-xs text-slate-400">Total invested amount</div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="text-xs font-medium text-slate-500">Holdings</div>
-        <div className="mt-2 text-2xl font-semibold tracking-tight">
-          {summary?.holdingsCount ?? 0}
+        <div className="text-xs font-medium text-slate-500">Total P&amp;L</div>
+        <div
+          className={[
+            "mt-2 text-2xl font-semibold tracking-tight",
+            Number(summary?.totalPnL ?? 0) >= 0 ? "text-emerald-600" : "text-rose-600",
+          ].join(" ")}
+        >
+          RM{Number(summary?.totalPnL ?? 0).toFixed(2)}
         </div>
-        <div className="mt-1 text-xs text-slate-400">Total active holdings</div>
+        <div className="mt-1 text-xs text-slate-400">Profit / loss overall</div>
       </div>
     </div>
   );
