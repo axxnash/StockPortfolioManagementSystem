@@ -1,72 +1,52 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axios";
 
 export default function AddStock() {
   const nav = useNavigate();
-  const portfolio_id = Number(localStorage.getItem("portfolio_id"));
 
-  const stockOptions = [
-    { symbol: "AAPL", name: "Apple Inc." },
-    { symbol: "MSFT", name: "Microsoft Corporation" },
-    { symbol: "GOOGL", name: "Alphabet Inc." },
-    { symbol: "AMZN", name: "Amazon.com Inc." },
-    { symbol: "TSLA", name: "Tesla Inc." },
-    { symbol: "NVDA", name: "NVIDIA Corporation" },
-    { symbol: "META", name: "Meta Platforms Inc." },
-    { symbol: "NFLX", name: "Netflix Inc." },
-    { symbol: "BABA", name: "Alibaba Group Holding Ltd." },
-    { symbol: "ORCL", name: "Oracle Corporation" },
-    { symbol: "CRM", name: "Salesforce Inc." },
-    { symbol: "AMD", name: "Advanced Micro Devices Inc." },
-    { symbol: "INTC", name: "Intel Corporation" },
-    { symbol: "UBER", name: "Uber Technologies Inc." },
-    { symbol: "SPOT", name: "Spotify Technology S.A." },
-    { symbol: "PYPL", name: "PayPal Holdings Inc." },
-    { symbol: "ADBE", name: "Adobe Inc." },
-    { symbol: "CSCO", name: "Cisco Systems Inc." },
-    { symbol: "IBM", name: "International Business Machines Corp." },
-    { symbol: "DIS", name: "The Walt Disney Company" },
-  ];
-
-  const [form, setForm] = useState({
-    symbol: "",
-    stock_name: "",
-    broker_platform: "",
-    quantity: "",
-    buy_price: "",
-    buy_date: "",
-  });
+  const [stocks, setStocks] = useState([]);
+  const [brokers, setBrokers] = useState([]);
   const [err, setErr] = useState("");
 
-  const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const [form, setForm] = useState({
+    stock_id: "",
+    broker_id: "",
+    quantity: "",
+    invested: "",
+  });
 
-  const onSymbolChange = (e) => {
-    const selectedSymbol = e.target.value;
-    const selectedStock = stockOptions.find(stock => stock.symbol === selectedSymbol);
-    setForm({
-      ...form,
-      symbol: selectedSymbol,
-      stock_name: selectedStock ? selectedStock.name : "",
-    });
-  };
+  useEffect(() => {
+    (async () => {
+      try {
+        const [sRes, bRes] = await Promise.all([
+          api.get("/stocks"),
+          api.get("/brokers"),
+        ]);
+        setStocks(sRes.data);
+        setBrokers(bRes.data);
+      } catch (e) {
+        setErr(e?.response?.data?.error || "Failed to load stocks/brokers");
+      }
+    })();
+  }, []);
+
+  const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const submit = async (e) => {
     e.preventDefault();
     setErr("");
+
     try {
       await api.post("/holdings", {
-        portfolio_id,
-        symbol: form.symbol.toUpperCase(),
-        stock_name: form.stock_name,
-        broker_platform: form.broker_platform,
+        stock_id: form.stock_id,
+        broker_id: form.broker_id,
         quantity: Number(form.quantity),
-        buy_price: Number(form.buy_price),
-        buy_date: form.buy_date,
+        invested: Number(form.invested),
       });
       nav("/dashboard");
     } catch (e2) {
-      setErr(e2?.response?.data?.error || "Failed to add stock");
+      setErr(e2?.response?.data?.error || "Failed to add holding");
     }
   };
 
@@ -78,7 +58,7 @@ export default function AddStock() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Add Stock</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Enter purchase details to add a new holding
+              Select stock & broker, then enter quantity and total invested amount
             </p>
           </div>
 
@@ -99,53 +79,48 @@ export default function AddStock() {
         )}
 
         <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {/* Symbol */}
+          {/* Stock */}
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Symbol
+              Stock
             </label>
             <select
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
-              name="symbol"
-              value={form.symbol}
-              onChange={onSymbolChange}
+              name="stock_id"
+              value={form.stock_id}
+              onChange={onChange}
               required
             >
-              <option value="">Select a symbol</option>
-              {stockOptions.map((stock) => (
-                <option key={stock.symbol} value={stock.symbol}>
-                  {stock.symbol} - {stock.name}
+              <option value="">Select stock</option>
+              {stocks.map((s) => (
+                <option key={s.stock_id} value={s.stock_id}>
+                  {s.stock_symbol} - {s.stock_name}
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-slate-400">Choose from popular stocks</p>
-          </div>
-
-          {/* Stock Name */}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Stock Name
-            </label>
-            <input
-              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm outline-none"
-              name="stock_name"
-              value={form.stock_name}
-              readOnly
-            />
+        
           </div>
 
           {/* Broker */}
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Broker Platform
+              Broker
             </label>
-            <input
+            <select
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
-              name="broker_platform"
-              placeholder="e.g. IBKR, Moomoo, Rakuten"
-              value={form.broker_platform}
+              name="broker_id"
+              value={form.broker_id}
               onChange={onChange}
-            />
+              required
+            >
+              <option value="">Select broker</option>
+              {brokers.map((b) => (
+                <option key={b.broker_id} value={b.broker_id}>
+                  {b.broker_name}
+                </option>
+              ))}
+            </select>
+            
           </div>
 
           {/* Quantity */}
@@ -164,33 +139,18 @@ export default function AddStock() {
             />
           </div>
 
-          {/* Buy Price */}
+          {/* Invested */}
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Buy Price
+              Total Invested (RM)
             </label>
             <input
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
-              name="buy_price"
-              placeholder="e.g. 189.50"
-              value={form.buy_price}
+              name="invested"
+              placeholder="e.g. 1895.00"
+              value={form.invested}
               onChange={onChange}
               inputMode="decimal"
-              required
-            />
-          </div>
-
-          {/* Buy Date */}
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Buy Date
-            </label>
-            <input
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
-              type="date"
-              name="buy_date"
-              value={form.buy_date}
-              onChange={onChange}
               required
             />
           </div>
