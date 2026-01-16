@@ -58,7 +58,7 @@ export default function AddStock() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Add Stock</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Select stock & broker, then enter quantity and total invested amount
+              Select stock & broker, then enter quantity and buy price
             </p>
           </div>
 
@@ -142,7 +142,7 @@ export default function AddStock() {
           {/* Invested */}
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Total Invested (RM)
+              Buy Price per Share (RM)
             </label>
             <input
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
