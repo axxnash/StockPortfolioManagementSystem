@@ -4,10 +4,15 @@ const { toCsv } = require("../services/csv.service");
 
 exports.exportCsv = async (req, res) => {
   const [rows] = await pool.query(
-    `SELECT h.* FROM holdings h
-     JOIN portfolios p ON p.portfolio_id=h.portfolio_id
-     WHERE p.user_id=? AND h.portfolio_id=?`,
-    [req.user.user_id, req.query.portfolio_id]
+    `SELECT up.portfolio_id, up.user_id, up.broker_id, up.stock_id,
+            up.quantity, up.invested, up.date_created, up.date_edited,
+            s.stock_name, s.stock_symbol, s.price AS current_price,
+            b.broker_name, b.broker_logo
+     FROM user_portfolio up
+     JOIN stock s ON s.stock_id = up.stock_id
+     JOIN broker b ON b.broker_id = up.broker_id
+     WHERE up.user_id=?`,
+    [req.user.user_id]
   );
 
   const csv = toCsv(rows.map(calculate));
