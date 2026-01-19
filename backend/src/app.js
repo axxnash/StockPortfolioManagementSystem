@@ -9,6 +9,7 @@ const exportRoutes = require("../routes/export.routes");
 const testRoutes = require("../routes/test.routes");
 const stockRoutes = require("../routes/stock.routes");
 const brokerRoutes = require("../routes/broker.routes");
+const userRoutes = require("../routes/user.routes");
 
 const errorHandler = require("../middleware/errorHandler");
 
@@ -30,6 +31,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/export", exportRoutes);
 app.use("/api/stocks", stockRoutes);
 app.use("/api/brokers", brokerRoutes);
+app.use("/api/user", userRoutes);
 
 app.use(errorHandler);
 

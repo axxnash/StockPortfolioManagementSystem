@@ -44,6 +44,20 @@ const mockDbService = {
     return user ? [user] : [];
   },
 
+  async updateUser(user_id, name, email, newPassword) {
+    const user = users.get(user_id);
+    if (!user) return false;
+    
+    user.name = name;
+    user.email = email;
+    if (newPassword) {
+      user.password = await bcrypt.hash(newPassword, 10);
+    }
+    
+    users.set(user_id, user);
+    return true;
+  },
+
   // Portfolio operations
   async createPortfolio(user_id, name) {
     const portfolio_id = Date.now();
