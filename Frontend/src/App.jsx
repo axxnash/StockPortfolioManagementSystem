@@ -14,6 +14,10 @@ import {
   ChevronDown,
   BarChart3,
   PlusCircle,
+  Edit,
+  Trash2,
+  X,
+  Save,
 } from 'lucide-react'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement } from 'chart.js'
 import { Doughnut, Bar, Line } from 'react-chartjs-2'
@@ -23,7 +27,7 @@ import { Checkbox } from './components/ui/checkbox'
 import { Label } from './components/ui/label'
 import { Card } from './components/ui/card'
 import { useAuth } from './hooks/useAuth'
-import { stocksAPI, brokersAPI, holdingsAPI, analyticsAPI } from './services/api'
+import { stocksAPI, brokersAPI, holdingsAPI, analyticsAPI, userAPI } from './services/api'
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement)
 
@@ -31,10 +35,39 @@ function DashboardView() {
   const [dashboardData, setDashboardData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [editingId, setEditingId] = useState(null)
+  const [editFormData, setEditFormData] = useState({})
+  const [stocks, setStocks] = useState([])
+  const [brokers, setBrokers] = useState([])
+  const [userName, setUserName] = useState('')
 
   useEffect(() => {
     loadDashboardData()
+    loadStocksAndBrokers()
+    loadUserProfile()
   }, [])
+
+  const loadUserProfile = async () => {
+    try {
+      const profile = await userAPI.getProfile()
+      setUserName(profile.name || '')
+    } catch (err) {
+      console.error('Failed to load profile:', err)
+    }
+  }
+
+  const loadStocksAndBrokers = async () => {
+    try {
+      const [stocksData, brokersData] = await Promise.all([
+        stocksAPI.list(),
+        brokersAPI.list(),
+      ])
+      setStocks(stocksData)
+      setBrokers(brokersData)
+    } catch (err) {
+      console.error('Failed to load stocks/brokers:', err)
+    }
+  }
 
   const loadDashboardData = async () => {
     try {
@@ -47,6 +80,50 @@ function DashboardView() {
       console.error('Failed to load dashboard:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleEdit = (holding) => {
+    setEditingId(holding.portfolio_id)
+    setEditFormData({
+      stock_id: holding.stock_id,
+      broker_id: holding.broker_id,
+      quantity: holding.quantity,
+      invested: holding.invested,
+    })
+  }
+
+  const handleCancelEdit = () => {
+    setEditingId(null)
+    setEditFormData({})
+  }
+
+  const handleSaveEdit = async (portfolioId) => {
+    try {
+      await holdingsAPI.update(
+        portfolioId,
+        editFormData.broker_id,
+        editFormData.stock_id,
+        parseFloat(editFormData.quantity),
+        parseFloat(editFormData.invested)
+      )
+      setEditingId(null)
+      setEditFormData({})
+      await loadDashboardData()
+    } catch (err) {
+      alert('Failed to update holding: ' + err.message)
+    }
+  }
+
+  const handleDelete = async (portfolioId) => {
+    if (!confirm('Are you sure you want to delete this holding?')) {
+      return
+    }
+    try {
+      await holdingsAPI.remove(portfolioId)
+      await loadDashboardData()
+    } catch (err) {
+      alert('Failed to delete holding: ' + err.message)
     }
   }
 
@@ -124,20 +201,57 @@ function DashboardView() {
     ],
   }
 
-  // For value trend, we'll use a simple placeholder since we don't have historical data
+  // Build portfolio value trend based on when holdings were added
+  const buildValueTrend = () => {
+    const holdings = dashboardData.holdings || []
+    if (holdings.length === 0) {
+      return {
+        labels: ['No Data'],
+        data: [0]
+      }
+    }
+
+    // Sort holdings by creation date
+    const sortedHoldings = [...holdings].sort((a, b) => {
+      const dateA = new Date(a.date_created || 0)
+      const dateB = new Date(b.date_created || 0)
+      return dateA - dateB
+    })
+
+    // Build cumulative value over time
+    const timeline = []
+    let cumulativeValue = 0
+
+    sortedHoldings.forEach((holding, index) => {
+      cumulativeValue += (holding.value || 0)
+      const date = holding.date_created ? new Date(holding.date_created).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Stock ${index + 1}`
+      timeline.push({
+        label: date,
+        value: cumulativeValue
+      })
+    })
+
+    // Add current total as the last point if we have multiple holdings
+    if (timeline.length > 0 && timeline.length === sortedHoldings.length) {
+      timeline[timeline.length - 1] = {
+        label: 'Current',
+        value: dashboardData.summary.totalValue
+      }
+    }
+
+    return {
+      labels: timeline.map(t => t.label),
+      data: timeline.map(t => t.value)
+    }
+  }
+
+  const trendData = buildValueTrend()
   const valueTrendData = {
-    labels: ['Month 1', 'Month 2', 'Month 3', 'Month 4', 'Month 5', 'Current'],
+    labels: trendData.labels,
     datasets: [
       {
         label: 'Portfolio Value',
-        data: [
-          dashboardData.summary.totalValue * 0.95,
-          dashboardData.summary.totalValue * 0.97,
-          dashboardData.summary.totalValue * 0.98,
-          dashboardData.summary.totalValue * 0.99,
-          dashboardData.summary.totalValue * 1.0,
-          dashboardData.summary.totalValue,
-        ],
+        data: trendData.data,
         borderColor: '#1d4ed8',
         backgroundColor: 'rgba(37, 99, 235, 0.1)',
         tension: 0.4,
@@ -154,7 +268,9 @@ function DashboardView() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Portfolio Dashboard</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">
+          {userName ? `Welcome back, ${userName}!` : 'Portfolio Dashboard'}
+        </h1>
         <p className="text-sm text-gray-500">Track and manage your stock investments</p>
       </div>
 
@@ -191,56 +307,154 @@ function DashboardView() {
         </Card>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-gray-900">Brokers &amp; Holdings</h2>
-            <p className="text-xs text-gray-400">Click on a broker to view invested stocks</p>
-          </div>
+      {/* Detailed Holdings Table */}
+      <Card className="p-0 overflow-hidden">
+        <div className="p-5 border-b bg-gray-50">
+          <h3 className="text-sm font-semibold text-gray-900">All Holdings</h3>
+          <p className="text-xs text-gray-500 mt-1">Manage your individual stock positions</p>
         </div>
-
-        <Card className="p-0 overflow-hidden">
-          <div className="grid grid-cols-12 px-6 py-3 text-xs font-medium text-gray-500 bg-gray-50 border-b">
-            <div className="col-span-4">Broker Platform</div>
-            <div className="col-span-2 text-right">Holdings</div>
-            <div className="col-span-3 text-right">Total Value</div>
-            <div className="col-span-2 text-right">Profit/Loss</div>
-            <div className="col-span-1 text-right">P/L %</div>
-          </div>
-
-          {brokerStats.map((broker) => {
-            const plPercent = broker.totalValue > 0 
-              ? ((broker.totalPnL / (broker.totalValue - broker.totalPnL)) * 100).toFixed(2)
-              : '0.00'
-            const plPositive = broker.totalPnL >= 0
-            return (
-              <div key={broker.name} className="grid grid-cols-12 px-6 py-3 text-sm items-center border-t hover:bg-gray-50">
-                <div className="col-span-4 flex items-center gap-3">
-                  <BarChart3 className="w-4 h-4 text-blue-600" />
-                  <div>
-                    <p className="font-medium text-gray-900">{broker.name}</p>
-                    <p className="text-xs text-gray-400">{broker.holdings} stocks</p>
-                  </div>
-                </div>
-                <div className="col-span-2 text-right">{broker.holdings}</div>
-                <div className="col-span-3 text-right font-medium text-gray-900">
-                  ${broker.totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </div>
-                <div className="col-span-2 text-right font-medium">
-                  <span className={plPositive ? 'text-emerald-600' : 'text-red-500'}>
-                    {plPositive ? '+' : ''}${broker.totalPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-                <div className="col-span-1 text-right">
-                  <span className={plPositive ? 'text-emerald-600 text-xs' : 'text-red-500 text-xs'}>
-                    {plPositive ? '+' : ''}{plPercent}%
-                  </span>
-                </div>
-              </div>
-            )
-          })}
-        </Card>
-      </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Broker</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quantity</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Buy Price</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Current Price</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Value</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">P/L</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {dashboardData.holdings.map((holding) => {
+                const isEditing = editingId === holding.portfolio_id
+                return (
+                  <tr key={holding.portfolio_id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <select
+                          value={editFormData.stock_id}
+                          onChange={(e) => setEditFormData({ ...editFormData, stock_id: e.target.value })}
+                          className="w-full text-xs border border-gray-300 rounded px-2 py-1"
+                        >
+                          {stocks.map((stock) => (
+                            <option key={stock.stock_id} value={stock.stock_id}>
+                              {stock.stock_symbol}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div>
+                          <p className="font-medium text-gray-900">{holding.stock_symbol}</p>
+                          <p className="text-xs text-gray-500">{holding.stock_name}</p>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <select
+                          value={editFormData.broker_id}
+                          onChange={(e) => setEditFormData({ ...editFormData, broker_id: e.target.value })}
+                          className="w-full text-xs border border-gray-300 rounded px-2 py-1"
+                        >
+                          {brokers.map((broker) => (
+                            <option key={broker.broker_id} value={broker.broker_id}>
+                              {broker.broker_name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-gray-700">{holding.broker_name}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={editFormData.quantity}
+                          onChange={(e) => setEditFormData({ ...editFormData, quantity: e.target.value })}
+                          className="w-20 text-xs text-right border border-gray-300 rounded px-2 py-1"
+                          step="0.01"
+                        />
+                      ) : (
+                        <span className="text-gray-900">{holding.quantity}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {isEditing ? (
+                        <input
+                          type="number"
+                          value={editFormData.invested}
+                          onChange={(e) => setEditFormData({ ...editFormData, invested: e.target.value })}
+                          className="w-24 text-xs text-right border border-gray-300 rounded px-2 py-1"
+                          step="0.01"
+                        />
+                      ) : (
+                        <span className="text-gray-900">${holding.invested?.toFixed(2)}</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-900">
+                      ${holding.current_price?.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-gray-900">
+                      ${holding.value?.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div>
+                        <span className={`font-medium ${holding.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {holding.pnl >= 0 ? '+' : ''}${holding.pnl?.toFixed(2)}
+                        </span>
+                        <p className={`text-xs ${holding.pnl >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                          {holding.pnl_percent >= 0 ? '+' : ''}{holding.pnl_percent?.toFixed(2)}%
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {isEditing ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleSaveEdit(holding.portfolio_id)}
+                            className="p-1.5 text-green-600 hover:bg-green-50 rounded transition"
+                            title="Save"
+                          >
+                            <Save className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="p-1.5 text-gray-600 hover:bg-gray-100 rounded transition"
+                            title="Cancel"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleEdit(holding)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition"
+                            title="Edit"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(holding.portfolio_id)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded transition"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="p-5">
@@ -277,22 +491,6 @@ function DashboardView() {
           </div>
         </Card>
       </div>
-
-      <Card className="p-5">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4">Portfolio Value Trend</h3>
-        <div className="h-64">
-          <Line
-            data={valueTrendData}
-            options={{
-              plugins: { legend: { display: false } },
-              scales: {
-                x: { grid: { display: false } },
-                y: { grid: { color: '#f3f4f6' } },
-              },
-            }}
-          />
-        </div>
-      </Card>
     </div>
   )
 }
@@ -722,20 +920,57 @@ function AnalyticsView() {
     ],
   }
 
-  // For value trend, we'll use a simple placeholder since we don't have historical data
+  // Build portfolio value trend based on when holdings were added
+  const buildValueTrend = () => {
+    const holdings = analyticsData.holdings || []
+    if (holdings.length === 0) {
+      return {
+        labels: ['No Data'],
+        data: [0]
+      }
+    }
+
+    // Sort holdings by creation date
+    const sortedHoldings = [...holdings].sort((a, b) => {
+      const dateA = new Date(a.date_created || 0)
+      const dateB = new Date(b.date_created || 0)
+      return dateA - dateB
+    })
+
+    // Build cumulative value over time
+    const timeline = []
+    let cumulativeValue = 0
+
+    sortedHoldings.forEach((holding, index) => {
+      cumulativeValue += (holding.value || 0)
+      const date = holding.date_created ? new Date(holding.date_created).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : `Stock ${index + 1}`
+      timeline.push({
+        label: date,
+        value: cumulativeValue
+      })
+    })
+
+    // Add current total as the last point if we have multiple holdings
+    if (timeline.length > 0 && timeline.length === sortedHoldings.length) {
+      timeline[timeline.length - 1] = {
+        label: 'Current',
+        value: summary.totalValue
+      }
+    }
+
+    return {
+      labels: timeline.map(t => t.label),
+      data: timeline.map(t => t.value)
+    }
+  }
+
+  const trendData = buildValueTrend()
   const valueTrendData = {
-    labels: ['Month 1', 'Month 2', 'Month 3', 'Month 4', 'Month 5', 'Current'],
+    labels: trendData.labels,
     datasets: [
       {
         label: 'Portfolio Value',
-        data: [
-          summary.totalValue * 0.95,
-          summary.totalValue * 0.97,
-          summary.totalValue * 0.98,
-          summary.totalValue * 0.99,
-          summary.totalValue * 1.0,
-          summary.totalValue,
-        ],
+        data: trendData.data,
         borderColor: '#1d4ed8',
         backgroundColor: 'rgba(37, 99, 235, 0.1)',
         tension: 0.4,
@@ -873,11 +1108,195 @@ function AnalyticsView() {
   )
 }
 
+function AccountView() {
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  })
+
+  useEffect(() => {
+    loadProfile()
+  }, [])
+
+  const loadProfile = async () => {
+    try {
+      setLoading(true)
+      const data = await userAPI.getProfile()
+      setProfile(data)
+      setFormData({
+        name: data.name || '',
+        email: data.email || '',
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setError(null)
+    setSuccess(null)
+
+    if (formData.newPassword && formData.newPassword !== formData.confirmPassword) {
+      setError('New passwords do not match')
+      return
+    }
+
+    if (formData.newPassword && !formData.currentPassword) {
+      setError('Current password is required to change password')
+      return
+    }
+
+    try {
+      await userAPI.updateProfile(
+        formData.name,
+        formData.email,
+        formData.currentPassword || undefined,
+        formData.newPassword || undefined
+      )
+      setSuccess('Profile updated successfully!')
+      setFormData({
+        ...formData,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      })
+      await loadProfile()
+    } catch (err) {
+      setError(err.message || 'Failed to update profile')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">Loading profile...</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-900">Account Settings</h1>
+        <p className="text-sm text-gray-500">Manage your account information and preferences</p>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-md p-4">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+
+      {success && (
+        <div className="bg-green-50 border border-green-200 rounded-md p-4">
+          <p className="text-sm text-green-600">{success}</p>
+        </div>
+      )}
+
+      <Card className="p-6">
+        <h2 className="text-sm font-semibold text-gray-900 mb-4">Profile Information</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label className="text-xs text-gray-600 mb-1 block">Full Name *</Label>
+            <Input
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+              placeholder="Enter your full name"
+            />
+          </div>
+
+          <div>
+            <Label className="text-xs text-gray-600 mb-1 block">Email Address *</Label>
+            <Input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              required
+              placeholder="Enter your email"
+            />
+          </div>
+
+          <div className="pt-4 border-t">
+            <h3 className="text-sm font-semibold text-gray-900 mb-4">Change Password (Optional)</h3>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-xs text-gray-600 mb-1 block">Current Password</Label>
+                <Input
+                  type="password"
+                  value={formData.currentPassword}
+                  onChange={(e) => setFormData({ ...formData, currentPassword: e.target.value })}
+                  placeholder="Enter current password"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-600 mb-1 block">New Password</Label>
+                <Input
+                  type="password"
+                  value={formData.newPassword}
+                  onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
+                  placeholder="Enter new password"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs text-gray-600 mb-1 block">Confirm New Password</Label>
+                <Input
+                  type="password"
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  placeholder="Confirm new password"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <Button type="submit" className="bg-blue-800 hover:bg-blue-900">
+              Save Changes
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {profile && (
+        <Card className="p-6">
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">Account Details</h2>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Member Since:</span>
+              <span className="text-gray-900">{new Date(profile.date_created).toLocaleDateString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">User ID:</span>
+              <span className="text-gray-900 font-mono text-xs">{profile.user_id}</span>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
 function App() {
   const { user, login, register, logout, loading: authLoading } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
-  const [view, setView] = useState('login') // 'login' | 'register' | 'dashboard' | 'addStock' | 'analytics'
+  const [view, setView] = useState('login') // 'login' | 'register' | 'dashboard' | 'addStock' | 'analytics' | 'account'
   const [authError, setAuthError] = useState(null)
   const [authLoadingState, setAuthLoadingState] = useState(false)
 
@@ -956,7 +1375,7 @@ function App() {
             <div className="flex items-center gap-3 mb-6">
               <TrendingUp className="w-8 h-8 text-blue-600" />
               <h1 className="text-3xl lg:text-4xl font-bold text-gray-900">
-                StockFolio Manager
+                StockPortfolio Manager
               </h1>
             </div>
             
@@ -1117,7 +1536,7 @@ function App() {
           <div className="flex items-center gap-3 mb-6">
             <TrendingUp className="w-8 h-8 text-blue-600" />
             <h1 className="text-3xl lg:text-4xl font-bold text-gray-900">
-              StockFolio Manager
+              StockPortfolio Manager
             </h1>
           </div>
           
@@ -1334,7 +1753,7 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-blue-600" />
-            <span className="font-semibold text-gray-900 text-sm sm:text-base">StockFolio Manager</span>
+            <span className="font-semibold text-gray-900 text-sm sm:text-base">StockPortfolio Manager</span>
           </div>
 
           <nav className="flex-1 flex justify-center">
@@ -1375,18 +1794,22 @@ function App() {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={handleLogout}
-              className="hidden sm:inline-flex text-xs text-gray-500 hover:text-gray-700"
-            >
-              Log out
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-xs sm:text-sm text-gray-700 hover:text-gray-900"
+              onClick={() => setView('account')}
+              className={`inline-flex items-center gap-1 text-xs sm:text-sm px-3 py-1.5 rounded-md transition ${
+                view === 'account' 
+                  ? 'bg-blue-50 text-blue-600' 
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
             >
               <User className="w-4 h-4" />
               <span className="hidden sm:inline">Account</span>
-              <ChevronDown className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="text-xs text-gray-500 hover:text-gray-700"
+            >
+              Log out
             </button>
           </div>
         </div>
@@ -1396,6 +1819,7 @@ function App() {
         {view === 'dashboard' && <DashboardView />}
         {view === 'addStock' && <AddStockView />}
         {view === 'analytics' && <AnalyticsView />}
+        {view === 'account' && <AccountView />}
       </main>
     </div>
   )

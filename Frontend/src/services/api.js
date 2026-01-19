@@ -126,3 +126,17 @@ export const analyticsAPI = {
     return fetchWithAuth('/analytics/dashboard');
   },
 };
+
+// User API
+export const userAPI = {
+  getProfile: async () => {
+    return fetchWithAuth('/user/profile');
+  },
+
+  updateProfile: async (name, email, currentPassword, newPassword) => {
+    return fetchWithAuth('/user/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ name, email, currentPassword, newPassword }),
+    });
+  },
+};
