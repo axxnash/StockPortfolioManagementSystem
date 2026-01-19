@@ -1,5 +1,8 @@
 const pool = require("../config/db");
+const mockDb = require("../services/mockDb.service");
 const crypto = require("crypto");
+
+const useMockDb = process.env.USE_MOCK_DB === 'true';
 
 exports.add = async (req, res) => {
   const { broker_id, stock_id, quantity, invested } = req.body;
@@ -18,6 +21,11 @@ exports.add = async (req, res) => {
 
   const portfolio_id = crypto.randomUUID();
 
+  if (useMockDb) {
+    await mockDb.addHolding(portfolio_id, req.user.user_id, broker_id, stock_id, q, inv);
+    return res.json({ portfolio_id });
+  }
+
   await pool.query(
     `INSERT INTO user_portfolio
      (portfolio_id, user_id, broker_id, stock_id, quantity, invested, date_created, date_edited)
@@ -29,6 +37,18 @@ exports.add = async (req, res) => {
 };
 
 exports.list = async (req, res) => {
+  if (useMockDb) {
+    const holdings = await mockDb.getHoldings(req.user.user_id);
+    return res.json(holdings.map(h => ({
+      ...h,
+      stock_name: 'Mock Stock',
+      stock_symbol: 'MOCK',
+      current_price: 100,
+      broker_name: 'Mock Broker',
+      broker_logo: ''
+    })));
+  }
+
   const [rows] = await pool.query(
     `SELECT up.portfolio_id, up.user_id, up.broker_id, up.stock_id,
             up.quantity, up.invested, up.date_created, up.date_edited,
@@ -60,6 +80,11 @@ exports.update = async (req, res) => {
   if (!Number.isFinite(inv) || inv < 0)
     return res.status(400).json({ error: "invested must be >= 0" });
 
+  if (useMockDb) {
+    await mockDb.updateHolding(req.params.id, req.user.user_id, broker_id, stock_id, q, inv);
+    return res.json({ message: "Updated" });
+  }
+
   await pool.query(
     `UPDATE user_portfolio
      SET broker_id=?, stock_id=?, quantity=?, invested=?, date_edited=CURDATE()
@@ -71,6 +96,11 @@ exports.update = async (req, res) => {
 };
 
 exports.remove = async (req, res) => {
+  if (useMockDb) {
+    await mockDb.deleteHolding(req.params.id, req.user.user_id);
+    return res.json({ message: "Deleted" });
+  }
+
   await pool.query(
     "DELETE FROM user_portfolio WHERE portfolio_id=? AND user_id=?",
     [req.params.id, req.user.user_id]

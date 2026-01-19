@@ -14,8 +14,13 @@ const errorHandler = require("../middleware/errorHandler");
 
 const app = express();
 
-app.use(cors({ origin: "http://localhost:5173", credentials: true }));
+app.use(cors({ origin: ["http://localhost:3000", "http://localhost:5173"], credentials: true }));
 app.use(express.json());
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ status: "Server is running", timestamp: new Date().toISOString() });
+});
 
 app.use("/api/test", testRoutes);
 app.use("/api/auth", authRoutes);

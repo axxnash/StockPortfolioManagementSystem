@@ -1,19 +1,37 @@
 const pool = require("../config/db");
+const mockDb = require("../services/mockDb.service");
 const { calculate } = require("../services/pnl.service");
+
+const useMockDb = process.env.USE_MOCK_DB === 'true';
 
 exports.dashboard = async (req, res, next) => {
   try {
-    const [rows] = await pool.query(
-      `SELECT up.portfolio_id, up.user_id, up.broker_id, up.stock_id,
-              up.quantity, up.invested, up.date_created, up.date_edited,
-              s.stock_name, s.stock_symbol, s.price AS current_price,
-              b.broker_name, b.broker_logo
-       FROM user_portfolio up
-       JOIN stock s ON s.stock_id = up.stock_id
-       JOIN broker b ON b.broker_id = up.broker_id
-       WHERE up.user_id=?`,
-      [req.user.user_id]
-    );
+    let rows = [];
+    
+    if (useMockDb) {
+      rows = await mockDb.getHoldings(req.user.user_id);
+      // Add mock stock and broker data
+      rows = rows.map(h => ({
+        ...h,
+        stock_name: 'Mock Stock',
+        stock_symbol: 'MOCK',
+        current_price: 100,
+        broker_name: 'Mock Broker',
+        broker_logo: ''
+      }));
+    } else {
+      [rows] = await pool.query(
+        `SELECT up.portfolio_id, up.user_id, up.broker_id, up.stock_id,
+                up.quantity, up.invested, up.date_created, up.date_edited,
+                s.stock_name, s.stock_symbol, s.price AS current_price,
+                b.broker_name, b.broker_logo
+         FROM user_portfolio up
+         JOIN stock s ON s.stock_id = up.stock_id
+         JOIN broker b ON b.broker_id = up.broker_id
+         WHERE up.user_id=?`,
+        [req.user.user_id]
+      );
+    }
 
     const enriched = rows.map(calculate);
 
